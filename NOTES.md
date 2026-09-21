@@ -79,6 +79,10 @@ cd <this repo>
 ### Rebuilding / updating the image
 ```bash
 docker build -t wpcli-wpe .
+
+# Publish to Docker Hub (after `docker login`):
+docker tag wpcli-wpe teejeer/wpcli-wpe:latest
+docker push teejeer/wpcli-wpe:latest
 ```
 (The remote `wp` on WP Engine is managed by them; only the container's local copy is ours.)
 
