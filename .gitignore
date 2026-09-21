@@ -1,0 +1,17 @@
+# Never commit SSH keys or password files
+*.pem
+*.ppk
+id_*
+!id_*.example
+*.pub.bak
+known_hosts*
+
+# WordPress (this repo is tooling, not a site)
+wp-config.php
+wp-content/uploads/
+*.sql
+*.sql.gz
+
+# OS / editor noise
+.DS_Store
+*.swp

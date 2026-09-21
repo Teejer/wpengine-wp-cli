@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# wp — run WP-CLI from the wpcli-wpe container against WP Engine environments.
+#
+# Usage:
+#   wp <env> <wp-cli args...>        run against env@env.ssh.wpengine.net (/sites/<env>)
+#   wp <env> shell                   interactive shell on the WP Engine server
+#   wp --local <wp-cli args...>      wp inside the container only (no SSH), uses /work
+#   wp shell                         interactive shell in the container
+#
+# Examples:
+#   wp mysite site info
+#   wp mysite plugin list
+#   wp prod cache flush   (if 'prod' alias is in wp-cli.yml)
+#
+# Prerequisites:
+#   - Docker image built:  docker build -t wpcli-wpe .
+#   - SSH key at $WPE_SSH_KEY (default ~/.ssh/id_ed25519) whose *public* half
+#     is added to the WP Engine User Portal (SSH Gateway section), with SSH
+#     Gateway enabled on the target environment.
+
+set -euo pipefail
+
+IMAGE=${WPE_IMAGE:-wpcli-wpe}
+SSH_KEY=${WPE_SSH_KEY:-$HOME/.ssh/id_ed25519}
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if [ ! -f "$SSH_KEY" ]; then
+    echo "wp: SSH key not found at $SSH_KEY" >&2
+    echo "    Generate one:  ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519" >&2
+    echo "    Then add ~/.ssh/id_ed25519.pub to the WP Engine User Portal (SSH Keys)." >&2
+    exit 1
+fi
+
+run_ssh() {
+    # ssh refuses to run with a world-readable config and rejects read-only
+    # key files (agent may try to update them), so copy both into the
+    # container with correct ownership/permissions at startup.
+    #
+    # Note: we do NOT use `wp --ssh=`; WP-CLI's ssh transport drops the
+    # host from the connection on WP Engine's gateway. Instead we ssh
+    # directly and run the remote wp from sites/<env> (the WP root on
+    # WP Engine).
+    docker run --rm -i \
+        --entrypoint bash \
+        -v "$DIR:/work" \
+        -v "$SSH_KEY:/host_key:ro" \
+        -w /work \
+        "$IMAGE" -c '
+            mkdir -p /root/.ssh && chmod 700 /root/.ssh
+            cp /host_key /root/.ssh/id_ed25519 && chmod 600 /root/.ssh/id_ed25519
+            printf "%s\n" \
+              "Host *.ssh.wpengine.net" \
+              "  IdentityFile /root/.ssh/id_ed25519" \
+              "  IdentitiesOnly yes" \
+              "  StrictHostKeyChecking accept-new" > /root/.ssh/config
+            chmod 600 /root/.ssh/config
+            if [ "$1" = shell ]; then shift; exec bash "$@"; fi
+            ENV="$1"; shift
+            HOST="${ENV}@${ENV}.ssh.wpengine.net"
+            if [ "$1" = shell ]; then
+                shift
+                exec ssh -t "$HOST" "cd sites/$ENV && bash"
+            fi
+            # Build a safely quoted remote command: cd <env root> && wp <args...>
+            remote="cd sites/$ENV && wp"
+            for a in "$@"; do remote="$remote $(printf '%q' "$a")"; done
+            exec ssh -T -q "$HOST" "$remote"
+        ' -- "$@"
+}
+
+case "${1:-}" in
+    shell)
+        shift
+        docker run --rm -it \
+            -v "$DIR:/work" \
+            -w /work \
+            "$IMAGE" bash ;;
+    --local)
+        shift
+        docker run --rm -it \
+            -v "$DIR:/work" \
+            -w /work \
+            "$IMAGE" --allow-root "$@" ;;
+    "")
+        echo "Usage: wp <environment> <wp-cli args...>" >&2
+        echo "       wp <environment> shell          (shell on the WPE server)" >&2
+        echo "       wp --local <wp-cli args...>     (container only)" >&2
+        echo "       wp shell                        (container shell)" >&2
+        exit 1 ;;
+    *)
+        ENV="$1"; shift
+        run_ssh "$ENV" "$@" ;;
+esac

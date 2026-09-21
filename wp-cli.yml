@@ -1,0 +1,18 @@
+# Alias examples for the ./wp wrapper.
+#
+# The wrapper resolves `wp <name> ...` to:
+#   <name>@<name>.ssh.wpengine.net  →  runs remote wp from /sites/<name>
+#
+# So for most setups NO configuration is needed — just use the environment
+# name from the WP Engine User Portal. This file exists for teams that want
+# friendlier short names. Uncomment and adapt the examples below.
+#
+# Map a short alias to its real environment name (alias=environment):
+#
+# prod=examplecom
+# staging=examplecom-staging
+# dev=examplecom-dev
+#
+# Example usage after mapping:
+#   ./wp prod plugin list
+#   ./wp staging db search "old text" "new text" wp_post
